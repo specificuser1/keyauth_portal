@@ -7,16 +7,22 @@ define('DB_PATH', __DIR__ . '/data/portal.db');
 define('DATA_DIR', __DIR__ . '/data');
 $pdo = null;
 
+// Ensure directories & secure session
 if (!is_dir(DATA_DIR)) mkdir(DATA_DIR, 0755, true);
 if (!isset($_SESSION['csrf'])) $_SESSION['csrf'] = bin2hex(random_bytes(16));
 
 function getPDO() {
     global $pdo;
     if (!$pdo) {
-        $pdo = new PDO('sqlite:' . DB_PATH);
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-        initDB($pdo);
+        try {
+            if (!file_exists(DB_PATH)) touch(DB_PATH);
+            $pdo = new PDO('sqlite:' . DB_PATH);
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            initDB($pdo);
+        } catch(PDOException $e) {
+            die("❌ DB Error: " . $e->getMessage() . "<br><small>Check /data folder permissions on Railway.</small>");
+        }
     }
     return $pdo;
 }
@@ -41,35 +47,28 @@ function initDB($pdo) {
             FOREIGN KEY(app_id) REFERENCES applications(id) ON DELETE CASCADE
         );
         CREATE TABLE IF NOT EXISTS activity_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, message TEXT, ip TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
+            id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, message TEXT, ip TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP        );
     ");
     
     $defaults = [
         'portal_pass' => password_hash('password', PASSWORD_DEFAULT),
-        'portal_title' => 'CordAuth', 'theme_primary' => '#6366f1', 'theme_bg' => '#0b0f19', 'theme_card' => '#151b28',        'webhook_url' => '', 'api_rate_limit' => '30', 'session_timeout' => '7200', 'maintenance_mode' => '0',
-        'auto_cleanup' => '1', 'logo_path' => ''
+        'portal_title' => 'CordAuth', 'theme_primary' => '#6366f1', 'theme_bg' => '#0b0f19', 'theme_card' => '#151b28',
+        'webhook_url' => '', 'api_rate_limit' => '30', 'session_timeout' => '7200', 'maintenance_mode' => '0', 'auto_cleanup' => '1', 'logo_path' => ''
     ];
-    foreach ($defaults as $k => $v) $pdo->exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('$k', '$v')");
-    
-    // Safe migration
-    $cols = ['keys' => ['variables'], 'activity_logs' => []];
-    foreach ($cols as $tbl => $arr) foreach ($arr as $col) {
-        if (!in_array($col, $pdo->query("PRAGMA table_info($tbl)")->fetchAll(PDO::FETCH_COLUMN,1))) {
-            try { $pdo->exec("ALTER TABLE $tbl ADD COLUMN $col TEXT DEFAULT ''"); } catch(Exception $e) {}
-        }
-    }
-    if ($pdo->query("SELECT value FROM settings WHERE key='auto_cleanup'")->fetchColumn() == '1') {
-        $pdo->exec("DELETE FROM keys WHERE expires_at < datetime('now')");
-        $pdo->exec("DELETE FROM activity_logs WHERE id < (SELECT MAX(id) FROM activity_logs) - 1000");
+    foreach ($defaults as $k => $v) {
+        $pdo->exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('$k', '$v')");
     }
 }
 
 function isLoggedIn() { return !empty($_SESSION['ka_logged_in']); }
 function requireLogin() { if (!isLoggedIn()) { header('Location: index.php'); exit; } }
-function verifyCSRF() { return $_POST['csrf'] ?? '' === ($_SESSION['csrf'] ?? ''); }
+function verifyCSRF() { return ($_POST['csrf'] ?? '') === ($_SESSION['csrf'] ?? ''); }
 
-function generateKey($len=16) { $c='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'; $k=''; for($i=0;$i<$len;$i++) $k.=$c[random_int(0,strlen($c)-1)]; return $k; }
+function generateKey($len=16) {
+    $c='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'; $k='';
+    for($i=0;$i<$len;$i++) $k.=$c[random_int(0,strlen($c)-1)];
+    return $k;
+}
 
 function generateMaskedKey($mask) {
     $map = ['A' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'N' => '0123456789', 'X' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'];
@@ -96,14 +95,14 @@ function sendDiscordEmbed($type, $title, $desc, $fields=[], $color=0x6366f1) {
         ]]
     ];
     $ch = curl_init($url);
-    curl_setopt_array($ch, [CURLOPT_POST=>true, CURLOPT_POSTFIELDS=>json_encode($data), CURLOPT_HTTPHEADER=>['Content-Type:application/json'], CURLOPT_TIMEOUT=>2, CURLOPT_RETURNTRANSFER=>true]);    curl_exec($ch); curl_close($ch);
-}
+    curl_setopt_array($ch, [CURLOPT_POST=>true, CURLOPT_POSTFIELDS=>json_encode($data), CURLOPT_HTTPHEADER=>['Content-Type:application/json'], CURLOPT_TIMEOUT=>2, CURLOPT_RETURNTRANSFER=>true]);
+    curl_exec($ch); curl_close($ch);}
 
 function uploadFile($file, $allowed=['image/png','image/jpeg','image/webp'], $max=2097152) {
-    if ($file['error'] !== UPLOAD_ERR_OK) return false;
-    if ($file['size'] > $max) return false;
-    if (!in_array(mime_content_type($file['tmp_name']), $allowed)) return false;
-    $path = DATA_DIR . '/' . basename($file['name']);
+    if ($file['error'] !== UPLOAD_ERR_OK || $file['size'] > $max) return false;
+    $mime = mime_content_type($file['tmp_name']);
+    if (!in_array($mime, $allowed)) return false;
+    $path = DATA_DIR . '/' . preg_replace('/[^a-zA-Z0-9._-]/', '', basename($file['name']));
     return move_uploaded_file($file['tmp_name'], $path) ? $path : false;
 }
 
