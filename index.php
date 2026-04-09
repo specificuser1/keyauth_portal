@@ -2,7 +2,7 @@
 if($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['login_pass'])){
     $hash=$pdo->query("SELECT value FROM settings WHERE key='portal_pass'")->fetchColumn();
     if(password_verify($_POST['login_pass'],$hash)){ $_SESSION['ka_logged_in']=true; logActivity($pdo,'login','Admin logged in'); sendDiscordEmbed('login','🔐 Admin Login','Portal dashboard accessed via '. $_SERVER['REMOTE_ADDR']); header('Location: index.php'); exit; }
-    $error="Wrong Password!";
+    $error="Galat password!";
 }
 if(isset($_GET['logout'])){ session_destroy(); header('Location: index.php'); exit; }
 if(!isLoggedIn()): ?>
