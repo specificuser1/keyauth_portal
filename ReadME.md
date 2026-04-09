@@ -1,17 +1,10 @@
 ```
-/keyauth-portal
-  ├── docker-compose.yml   (Optional, local testing ke liye)
-  ├── Dockerfile           (Railway deployment ke liye)
-  ├── railway.json         (Railway config)
-  ├── .railway/environment (Env vars template)
-  ├── config.php
-  ├── login.php
-  ├── dashboard.php
-  ├── apps.php
-  ├── keys.php
-  ├── api.php
-  ├── settings.php
-  ├── .htaccess
-  └── sql/
-      └── schema.sql       (Database schema)
+keyauth-portal/
+├── core.php          # DB connection, sessions, helper functions
+├── index.php         # Login + Dashboard (Stats)
+├── apps.php          # Application management
+├── keys.php          # Key generation & management
+├── settings.php      # Portal password & global settings
+├── api.php           # External validation API
+└── style.css         # Professional UI (embedded in files for simplicity)
 ```
