@@ -25,6 +25,8 @@ function initDB($pdo) {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,
             secret_key TEXT UNIQUE NOT NULL,
+            description TEXT DEFAULT '',
+            status TEXT DEFAULT 'active',
             expires_at DATETIME DEFAULT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
@@ -42,22 +44,36 @@ function initDB($pdo) {
             max_uses INTEGER DEFAULT 0,
             usage_count INTEGER DEFAULT 0,
             cooldown INTEGER DEFAULT 0,
+            variables TEXT DEFAULT '{}',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             expires_at DATETIME DEFAULT NULL,
-            last_used DATETIME DEFAULT NULL,
-            FOREIGN KEY(app_id) REFERENCES applications(id) ON DELETE CASCADE
+            last_used DATETIME DEFAULT NULL,            FOREIGN KEY(app_id) REFERENCES applications(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS api_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_id INTEGER, key_id INTEGER, ip TEXT, hwid TEXT, status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
     ");
-    
-    $pdo->exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('portal_pass', '\$2y\$10\$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi')");
 
-    // Safe Migration for old DBs
-    $cols = ['applications' => ['expires_at'], 'keys' => ['note','ip_locked','ip_value','max_uses','usage_count','cooldown']];
-    foreach ($cols as $table => $addCols) {
-        foreach ($addCols as $col) {
-            $info = $pdo->query("PRAGMA table_info($table)")->fetchAll(PDO::FETCH_COLUMN, 1);
-            if (!in_array($col, $info)) {
-                try { $pdo->exec("ALTER TABLE $table ADD COLUMN $col TEXT DEFAULT NULL"); } catch(Exception $e) {}
+    $defaults = [
+        'portal_pass' => password_hash('password', PASSWORD_DEFAULT),
+        'portal_title' => 'CordAuth',
+        'webhook_url' => '',
+        'api_rate_limit' => '30',
+        'session_timeout' => '7200',
+        'maintenance_mode' => '0'
+    ];
+    foreach ($defaults as $k => $v) {
+        $pdo->exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('$k', '$v')");
+    }
+
+    // Safe column migration
+    $tables = ['applications' => ['description','status'], 'keys' => ['variables'], 'api_logs' => []];
+    foreach ($tables as $tbl => $cols) {
+        foreach ($cols as $col) {
+            $exists = $pdo->query("PRAGMA table_info($tbl)")->fetchAll(PDO::FETCH_COLUMN, 1);
+            if (!in_array($col, $exists)) {
+                try { $pdo->exec("ALTER TABLE $tbl ADD COLUMN $col TEXT DEFAULT ''"); } catch(Exception $e) {}
             }
         }
     }
@@ -66,20 +82,27 @@ function initDB($pdo) {
 function isLoggedIn() { return !empty($_SESSION['ka_logged_in']); }
 function requireLogin() { if (!isLoggedIn()) { header('Location: index.php'); exit; } }
 
-function generateKey($length = 16) {
-    $chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    $key = '';
-    for ($i = 0; $i < $length; $i++) $key .= $chars[random_int(0, strlen($chars) - 1)];
-    return $key;
+function generateKey($len=16) {
+    $c='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'; $k='';
+    for($i=0;$i<$len;$i++) $k.=$c[random_int(0,strlen($c)-1)];
+    return $k;
 }
 function generateSecret() { return bin2hex(random_bytes(16)); }
+function getStat($pdo,$q){ return $pdo->query($q)->fetchColumn(); }
 
-function getStat($pdo, $query) { return $pdo->query($query)->fetchColumn(); }
+function getChartData($pdo) {
+    $days = $pdo->query("SELECT DISTINCT date(created_at) as d FROM keys ORDER BY d DESC LIMIT 7")->fetchAll(PDO::FETCH_COLUMN);
+    $created = []; $used = [];
+    foreach(array_reverse($days) as $d) {
+        $created[] = $pdo->query("SELECT COUNT(*) FROM keys WHERE date(created_at)='$d'")->fetchColumn();
+        $used[] = $pdo->query("SELECT COUNT(*) FROM keys WHERE last_used IS NOT NULL AND date(last_used)='$d'")->fetchColumn();
+    }    return json_encode(['labels' => $days, 'created' => $created, 'used' => $used]);
+}
 
-function getStatusBadge($status, $expires_at, $now) {
-    if ($status === 'blocked') return '<span class="badge red">Blocked</span>';
-    if ($status === 'paused') return '<span class="badge yellow">Paused</span>';
-    if ($expires_at && strtotime($expires_at) < $now) return '<span class="badge gray">Expired</span>';
-    return '<span class="badge green">Active</span>';
+function dispatchWebhook($url, $data) {
+    if (!$url) return;
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [CURLOPT_POST=>true, CURLOPT_POSTFIELDS=>json_encode($data), CURLOPT_HTTPHEADER=>['Content-Type:application/json'], CURLOPT_TIMEOUT=>3, CURLOPT_RETURNTRANSFER=>true]);
+    curl_exec($ch); curl_close($ch);
 }
 ?>
