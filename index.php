@@ -25,7 +25,7 @@ button{width:100%;padding:14px;background:var(--primary);color:#fff;border:none;
 button:hover{transform:translateY(-2px);box-shadow:0 5px 15px rgba(99,102,241,.4)}
 .err{color:var(--red);font-size:.9rem;text-align:center}
 @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-</style></head><body><form method="POST"><h2 style="margin:0 0 15px;text-align:center">🔐 <?=$title?></h2><?php if(!empty($error)) echo "<p class='err'>$error</p>"; ?><input type="password" name="login_pass" placeholder="Password" required><button type="submit">Login</button><p style="font-size:.8rem;color:var(--muted);text-align:center;margin-top:10px">PROGRAMMED <code>BY SUBHAN</code></p></form></body></html>
+</style></head><body><form method="POST"><h2 style="margin:0 0 15px;text-align:center">🔐 <?=$title?></h2><?php if(!empty($error)) echo "<p class='err'>$error</p>"; ?><input type="password" name="login_pass" placeholder="Password" required><button type="submit">Login</button><p style="font-size:.8rem;color:var(--muted);text-align:center;margin-top:10px">Default: <code>password</code></p></form></body></html>
 <?php exit; endif;
 
 // Direct PDO queries to avoid any function scope issues
