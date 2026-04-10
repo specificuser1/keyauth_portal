@@ -1,17 +1,19 @@
 <?php 
-require 'core.php'; 
-$pdo = getPDO(); 
+require 'core.php'; $pdo = getPDO(); 
 $title = $pdo->query("SELECT value FROM settings WHERE key='portal_title'")->fetchColumn() ?: 'CordAuth';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_pass'])) {
-    $hash = $pdo->query("SELECT value FROM settings WHERE key='portal_pass'")->fetchColumn();
-    if (password_verify($_POST['login_pass'], $hash)) {
-        $_SESSION['ka_logged_in'] = true;
-        logActivity($pdo, 'login', 'Admin logged in from ' . $_SERVER['REMOTE_ADDR']);
-        sendDiscordEmbed('login', '🔐 Admin Login', 'Portal dashboard accessed via ' . $_SERVER['REMOTE_ADDR']);
-        header('Location: index.php'); exit;
+    if (!verifyCSRF()) { $error = "Security Check Failed"; }
+    else {
+        $hash = $pdo->query("SELECT value FROM settings WHERE key='portal_pass'")->fetchColumn();
+        if (password_verify($_POST['login_pass'], $hash)) {
+            $_SESSION['ka_logged_in'] = true;
+            logActivity($pdo, 'login', 'Admin logged in from ' . $_SERVER['REMOTE_ADDR']);
+            sendDiscordEmbed('🔐 Admin Login', 'Portal dashboard accessed via `' . $_SERVER['REMOTE_ADDR'] . '`', [], 0x22c55e);
+            header('Location: index.php'); exit;
+        }
+        $error = "Galat password!";
     }
-    $error = "Galat password!";
 }
 if (isset($_GET['logout'])) { session_destroy(); header('Location: index.php'); exit; }
 if (!isLoggedIn()): ?>
@@ -25,10 +27,11 @@ button{width:100%;padding:14px;background:var(--primary);color:#fff;border:none;
 button:hover{transform:translateY(-2px);box-shadow:0 5px 15px rgba(99,102,241,.4)}
 .err{color:var(--red);font-size:.9rem;text-align:center}
 @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-</style></head><body><form method="POST"><h2 style="margin:0 0 15px;text-align:center">🔐 <?=$title?></h2><?php if(!empty($error)) echo "<p class='err'>$error</p>"; ?><input type="password" name="login_pass" placeholder="Password" required><button type="submit">Login</button><p style="font-size:.8rem;color:var(--muted);text-align:center;margin-top:10px">Default: <code>password</code></p></form></body></html>
+</style></head><body><form method="POST"><h2 style="margin:0 0 15px;text-align:center">🔐 <?=$title?></h2>
+<?= csrfField() ?><?php if(!empty($error)) echo "<p class='err'>$error</p>"; ?>
+<input type="password" name="login_pass" placeholder="Password" required><button type="submit">Login</button><p style="font-size:.8rem;color:var(--muted);text-align:center;margin-top:10px">Default: <code>password</code></p></form></body></html>
 <?php exit; endif;
 
-// Direct PDO queries to avoid any function scope issues
 $appsTotal = $pdo->query("SELECT COUNT(*) FROM applications")->fetchColumn();
 $appsActive = $pdo->query("SELECT COUNT(*) FROM applications WHERE status='active'")->fetchColumn();
 $keysTotal = $pdo->query("SELECT COUNT(*) FROM keys")->fetchColumn();
@@ -57,18 +60,14 @@ $logs = $pdo->query("SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT 
 <div class="chart-box"><canvas id="doughnutChart"></canvas></div>
 </div>
 <div class="card" style="margin-top:1.5rem">
-<h3>🌡️ 30-Day Validation Heatmap</h3>
-<div class="heatmap" id="heatmap"></div>
+<h3>🌡️ 30-Day Validation Heatmap</h3><div class="heatmap" id="heatmap"></div>
 </div>
 <div class="logs"><h3 style="margin:0 0 10px">📜 Recent Activity</h3><?php foreach($logs as $l) echo "<div class='log'><b>{$l['type']}</b>: {$l['message']} <span style='float:right'>".date('H:i',strtotime($l['created_at']))."</span></div>"; ?></div>
 </div>
 <script>
-const ctxP=document.getElementById('pieChart').getContext('2d');
-const ctxD=document.getElementById('doughnutChart').getContext('2d');
 const st=<?= $chartData ?>;
-new Chart(ctxP,{type:'pie',data:{labels:Object.keys(st.status),datasets:[{data:Object.values(st.status),backgroundColor:['#22c55e','#f59e0b','#ef4444','#64748b']}]},options:{plugins:{legend:{labels:{color:'#94a3b8'}}}}});
-new Chart(ctxD,{type:'doughnut',data:{labels:Object.keys(st.hwid),datasets:[{data:Object.values(st.hwid),backgroundColor:['#3b82f6','#94a3b8']}]},options:{plugins:{legend:{labels:{color:'#94a3b8'}}}}});
+new Chart(document.getElementById('pieChart'),{type:'pie',data:{labels:Object.keys(st.status),datasets:[{data:Object.values(st.status),backgroundColor:['#22c55e','#f59e0b','#ef4444','#64748b']}]},options:{plugins:{legend:{labels:{color:'#94a3b8'}}}}});
+new Chart(document.getElementById('doughnutChart'),{type:'doughnut',data:{labels:Object.keys(st.hwid),datasets:[{data:Object.values(st.hwid),backgroundColor:['#3b82f6','#94a3b8']}]},options:{plugins:{legend:{labels:{color:'#94a3b8'}}}}});
 const hm=document.getElementById('heatmap');
-const days=Array.from({length:28},(_,i)=>Math.floor(Math.random()*5));
-days.forEach(v=>{const d=document.createElement('div');d.className='day';d.style.background=`rgba(99,102,241,${v/5})`;hm.appendChild(d);});
+Array.from({length:28},()=>Math.floor(Math.random()*5)).forEach(v=>{const d=document.createElement('div');d.className='day';d.style.background=`rgba(99,102,241,${v/5})`;hm.appendChild(d);});
 </script></body></html>
